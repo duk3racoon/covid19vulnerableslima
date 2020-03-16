@@ -1,20 +1,20 @@
 #este script trabaja con el CPV2017 (que viene resumido por manzanas y con las manzanas de menos de 30hab agrupadas
 #para preservar los datos personales) para:
 # 1. importar los resumenes del censo por manzanas (.xlsx) e importar el shapefile correspondiente
-# 2. agregar el dato de población total al resumen de viviends
-# 3. crear un IDZONA compatible con la cartografía
-# 4. calcular las proporciones sobre las variables de vivienda
-# 5. hacer un join de atributos con la cartografía
-# 6. imputar a las manzanas con menos de 30hab el valor correspondiente al promedio en la zona correspondiente
+# 2. calcular el porcentaje de población de 60 años a más
+# 3. imputar el porcentaje correspondiente para las manzanas con menos de 30hab 
+# 4. graficarlas usando tmap
 
 library( readxl)
 library( dplyr)
 library( sf)
 library( leaflet)
+library( beepr)
+library( tmap)
 
 #importar bases del cpv en excel
 #cpv2017pob <- read_excel( "~/Dropbox/Inputs/BD/CPV2017/BASE_DATOS_CPV2017_POBLACION_MANZANA.xlsx")
-d_pob      <- read_excel( "~/Dropbox/Inputs/BD/CPV2017/DICCIONARIO_CPV2017_POBLACION_MANZANA.xlsx")
+#d_pob      <- read_excel( "~/Dropbox/Inputs/BD/CPV2017/DICCIONARIO_CPV2017_POBLACION_MANZANA.xlsx")
 
 #save(cpv2017pob, file = "~/Dropbox/RProjects/covid19/data/cpv2017pob_gedad.RData")
 #abrir cpv2017pob guardado
@@ -39,7 +39,7 @@ cpv17_p_abuelos <- cpv2017pob %>%
   transmute( IDMANZANA    = IDMANZANA,
              IDZONA       = IDZONA,
              POB_TOTAL    = POB_TOTAL,
-             porcentaje_pob_vulnerable    = grupo60mas/POB_TOTAL)
+             p_pob_vul    = grupo60mas/POB_TOTAL)
 
 #importar shapefile
 shp2017sf <- read_sf( "~/Google Drive/expansion intercensal/data_output/LMM_CPV2017.shp")
@@ -60,7 +60,7 @@ join_a <- join_a %>% select( OBJECTID:MANZANA, IDZONASHP, geometry) #se borra de
 
 #join_a debe completarse con la info de zonas_menos_30 (que tiene el p_pob_vul en las manzanas -30h de cada zona)
 zonas_menos_30 <- cpv17_p_abuelos[ cpv17_p_abuelos$IDMANZANA == "MANZANAS CON MENOS DE 30 HABITANTES", ]
-zonas_menos_30 <- zonas_menos_30 %>% select( IDZONA:porcentaje_pob_vulnerable)
+zonas_menos_30 <- zonas_menos_30 %>% select( IDZONA:p_pob_vul)
 
 #pegamos el p_pobl_vul en cada manzana de join_a, según la zona en la que está
 join_a <- left_join( join_a, zonas_menos_30, by = c( "IDZONASHP" = "IDZONA"))
@@ -69,25 +69,39 @@ join_a <- left_join( join_a, zonas_menos_30, by = c( "IDZONASHP" = "IDZONA"))
 join_b <- join_b %>% select( OBJECTID:IDZONASHP, POB_TOTAL:geometry)
 
 #juntar de nuevo join_a con join_b
-manzanas_lima <- rbind( join_a, join_b)
-a <- manzanas_lima %>% 
+join <- rbind( join_a, join_b)
 
-#st_write(shp_abuelos, "/data_output/shp_abuelos.shp")
+#transformar el decimal en porcentaje
+join <- join %>% mutate( porcentaje_real = round( p_pob_vul*100, 2))
+
+#capear mayores de 30 a 30,renombrar y seleccionar las variables necesarias
+manzanas_lima <- join %>% 
+  mutate( porcentaje_pob_vulnerable = case_when(porcentaje_real >= 30 ~ 30,
+                                                porcentaje_real <= 30 ~ porcentaje_real)) %>% 
+  select( UBIGEO, DISTRITO, porcentaje_pob_vulnerable, geometry)
+
+#quitar objetos innecesarios
+rm( cpv17_p_abuelos, cpv2017pob, join, join_a, join_b, lima_web, shp2017sf, zonas_menos_30)
 
 #probar con un distrito
-vmt <- shp_abuelos %>% filter( UBIGEO == "150143")
+vmt <- manzanas_lima %>% filter( UBIGEO == "150143")
 
 #tmap
+
+current.mode <- tmap_mode( "view")
 m_lima <-   tm_basemap(leaflet::providers$Stamen.Toner, alpha = 0.1)+
-    tm_shape( manzanas_lima) +
-    tm_fill( col = "porcentaje_pob_vulnerable")+
+    tm_shape( vmt) +
+    tm_fill( col = "porcentaje_pob_vulnerable",
+             title= "Porcentaje de población vulnerable",
+             breaks = c(0, 10, 20, 30, Inf))+
   tm_layout( title = "Lima Metrpolitana 2017: Porcentaje de población de 60 años a más",
             title.position = "center")+
-  tm_view( view.legend.position=c("right", "bottom"))
-  
-current.mode <- tmap_mode( "view")
+  tm_view( view.legend.position=c("right", "bottom"),
+           set.view = 11)
 
 m_lima
 
 tmap_save(m_lima, filename = "index.html")
+
+#st_write(shp_abuelos, "/data_output/shp_abuelos.shp")
 
