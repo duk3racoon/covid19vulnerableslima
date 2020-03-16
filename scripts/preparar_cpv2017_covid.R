@@ -89,15 +89,17 @@ vmt <- manzanas_lima %>% filter( UBIGEO == "150143")
 #tmap
 
 current.mode <- tmap_mode( "view")
-m_lima <-   tm_basemap(leaflet::providers$Stamen.Toner, alpha = 0.1)+
-    tm_shape( vmt) +
-    tm_fill( col = "porcentaje_pob_vulnerable",
-             title= "Porcentaje de población vulnerable",
-             breaks = c(0, 10, 20, 30, Inf))+
+m_lima <-   tm_shape( vmt) +
+  tm_basemap(server = NULL) +
+  tm_fill( col = "porcentaje_pob_vulnerable",
+           title= "Porcentaje de población vulnerable",
+           breaks = c( 0, 10, 20, 30, Inf),
+           popup.vars = c( "porcentaje_pob_vulnerable", "DISTRITO")) +
+  tm_tiles( leaflet::providers$Stamen.Toner, alpha = 0.1) +
   tm_layout( title = "Lima Metrpolitana 2017: Porcentaje de población de 60 años a más",
-            title.position = "center")+
+             title.position = "center") +
   tm_view( view.legend.position=c("right", "bottom"),
-           set.view = 11)
+           set.view = 11) 
 
 m_lima
 
