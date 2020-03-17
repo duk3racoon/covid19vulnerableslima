@@ -72,38 +72,86 @@ join_b <- join_b %>% select( OBJECTID:IDZONASHP, POB_TOTAL:geometry)
 join <- rbind( join_a, join_b)
 
 #transformar el decimal en porcentaje
-join <- join %>% mutate( porcentaje_real = round( p_pob_vul*100, 2))
+join <- join %>% mutate( porc_mayores_de_60 = round( p_pob_vul*100, 2))
 
 #capear mayores de 30 a 30,renombrar y seleccionar las variables necesarias
-manzanas_lima <- join %>% 
-  mutate( porcentaje_pob_vulnerable = case_when(porcentaje_real >= 30 ~ 30,
-                                                porcentaje_real <= 30 ~ porcentaje_real)) %>% 
-  select( UBIGEO, DISTRITO, porcentaje_pob_vulnerable, geometry)
+#filtrar playas del sur para reducir tamaño del archivo
+manzanas_lmm <- join %>% 
+  mutate( porcentaje_pob_vulnerable = case_when(porc_mayores_de_60 >= 30 ~ 30,
+                                                porc_mayores_de_60 <= 30 ~ porc_mayores_de_60))
 
 #quitar objetos innecesarios
-rm( cpv17_p_abuelos, cpv2017pob, join, join_a, join_b, lima_web, shp2017sf, zonas_menos_30)
+rm( cpv17_p_abuelos, cpv2017pob, join, join_a, join_b, shp2017sf, zonas_menos_30)
 
-#probar con un distrito
-vmt <- manzanas_lima %>% filter( UBIGEO == "150143")
+#separar el norte y el sur
 
-#tmap
+manzanas_sur <-   manzanas_lmm %>% 
+  filter( substr( UBIGEO, start = 1, stop = 2) != "07") %>%
+  filter( UBIGEO != 150102 & UBIGEO != 150106 & UBIGEO != 150110 & UBIGEO != 150112 & UBIGEO != 150117 & 
+          UBIGEO != 150125 & UBIGEO != 150135 & UBIGEO != 150139)
 
+manzanas_norte <-   manzanas_lmm %>% 
+  filter( substr( UBIGEO, start = 1, stop = 2) != "07") %>%
+  filter( UBIGEO != 150108 & UBIGEO != 150119 & UBIGEO != 150123 & UBIGEO != 150124 & UBIGEO != 150126 & 
+          UBIGEO != 150127 & UBIGEO != 150129 & UBIGEO != 150133 & UBIGEO != 150138 & UBIGEO != 150142 &
+          UBIGEO != 150143)
+
+#  Seleccionar solo las variables necesarias
+manzanas_sur   <- manzanas_sur    %>%  select( IDMANZANA, UBIGEO, DISTRITO, porc_mayores_de_60, porcentaje_pob_vulnerable, geometry)
+manzanas_norte <- manzanas_norte  %>%  select( IDMANZANA, UBIGEO, DISTRITO, porc_mayores_de_60, porcentaje_pob_vulnerable, geometry)
+
+
+#distrito prueba
+distrito <- manzanas_sur %>% filter( UBIGEO == "150101")
+
+#tmap. definir modo
 current.mode <- tmap_mode( "view")
-m_lima <-   tm_shape( vmt) +
+
+#crear objetos de mapas sur y norte
+m_lima_sur <- tm_shape( manzanas_sur) +
   tm_basemap(server = NULL) +
   tm_fill( col = "porcentaje_pob_vulnerable",
-           title= "Porcentaje de población vulnerable",
-           breaks = c( 0, 10, 20, 30, Inf),
-           popup.vars = c( "porcentaje_pob_vulnerable", "DISTRITO")) +
-  tm_tiles( leaflet::providers$Stamen.Toner, alpha = 0.1) +
-  tm_layout( title = "Lima Metrpolitana 2017: Porcentaje de población de 60 años a más",
+           title = "Mayores de 60 años (%)",
+           style = "cont",
+           breaks = c(0, 10, 20, 30),
+           showNA = FALSE,
+           id = "IDMANZANA",
+           popup.vars = c( "porc_mayores_de_60", "DISTRITO")) +
+  tm_tiles( leaflet::providers$Stamen.Toner, alpha = 0.15) +
+  tm_layout( title = "POBLACIÓN VULNERABLE AL COVID-19: MAYORES DE 60 AÑOS. (Norte de Lima, fuente: CPV 2017, elaboración: @gonzalotalavera)",
              title.position = "center") +
   tm_view( view.legend.position=c("right", "bottom"),
-           set.view = 11) 
+           set.view = 11,
+           set.zoom.limits = c(10, 18)) 
 
-m_lima
+m_lima_norte <- tm_shape( manzanas_norte) +
+  tm_basemap(server = NULL) +
+  tm_fill( col = "porcentaje_pob_vulnerable",
+           title = "Mayores de 60 años (%)",
+           style = "cont",
+           breaks = c(0, 10, 20, 30),
+           showNA = FALSE,
+           id = "IDMANZANA",
+           popup.vars = c( "porc_mayores_de_60", "DISTRITO")) +
+  tm_tiles( leaflet::providers$Stamen.Toner, alpha = 0.15) +
+  tm_layout( title = "POBLACIÓN VULNERABLE AL COVID-19: MAYORES DE 60 AÑOS. (Norte de Lima, fuente: CPV 2017, elaboración: @gonzalotalavera)",
+             title.position = "center") +
+  tm_view( view.legend.position=c("right", "bottom"),
+           set.view = 11,
+           set.zoom.limits = c(10, 18)) 
 
-tmap_save(m_lima, filename = "index.html")
+#guardar objetos en html
+tmap_save( m_lima_norte, filename = "lima_norte.html")
+tmap_save( m_lima_sur,   filename = "lima_sur.html")
 
-#st_write(shp_abuelos, "/data_output/shp_abuelos.shp")
+map<-leaflet()%>%
+  addTiles()%>%
+  
+  addPolygons(data = plotMerge,
+              fillColor = ~pal(plotMerge$incomePerCapita),
+              color = "#000000", 
+              fillOpacity = 0.8,
+              weight = 0.2,
+              popup=popup)%>%
+  saveWidget(map, file="map1.html", selfcontained=FALSE)
 
